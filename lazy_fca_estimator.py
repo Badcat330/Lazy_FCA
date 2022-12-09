@@ -1,9 +1,8 @@
-from typing import Iterator, Callable, Tuple
+from typing import Callable, Tuple
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_array, check_X_y, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
@@ -61,7 +60,7 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
         self:
             Return self for onelines.
         """
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, dtype=object)
         self.classes_ = unique_labels(y)
         self.X_ = X
         self.y_ = y
@@ -198,8 +197,8 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
         if self.classes_[0] not in {0, 1} or self.classes_[1] not in {0, 1}:
             Y_train = np.where(Y_train==self.classes_[0], 0, 1)
         
-        prediction = np.empty(X.shape[0], dtype=np.bool_)
-        self.confidence_ = np.array(prediction)
+        prediction = np.empty(X.shape[0], dtype=np.object_)
+        self.confidence_ = np.empty(X.shape[0], dtype=np.object_)
         for i, x in tqdm(
             enumerate(X),
             initial=0, total=len(X),
@@ -229,17 +228,17 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
             # If enough targets predicted count avg prediction and save confidence if needed
             if positive_count + negative_count >= self.check_number:
                 if negative_count > positive_count:
-                    confidence_value = negative_count / number_checked
+                    confidence_value = negative_count / self.check_number
                     if confidence_value > self.consistency_threshold:
                         if confidence:
-                            self.confidence_[i] = confidence_value / number_checked
+                            self.confidence_[i] = confidence_value
                         prediction[i] = self.classes_[0]
                         continue
                 elif positive_count > negative_count:
-                    confidence_value = positive_count / number_checked
+                    confidence_value = positive_count / self.check_number
                     if confidence_value > self.consistency_threshold:
                         if confidence:
-                            self.confidence_[i] = confidence_value / number_checked
+                            self.confidence_[i] = confidence_value
                         prediction[i] = self.classes_[1]
                         continue
             prediction[i] = None
@@ -247,4 +246,16 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
                 self.confidence_[i] = None
 
         return prediction
-            
+
+
+def accuracy_score_undefine(y_test, predict):
+    pass
+
+def recall_score_undefine(y_test, predict):
+    pass
+
+def precision_score_undefine(y_test, predict):
+    pass
+
+def f1_score_undefine(y_test, predict):
+    pass
