@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Iterator
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_array, check_X_y, check_is_fitted
@@ -171,8 +171,9 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
             X_train: np.array = None,
             Y_train: np.array = None,
             confidence: bool = False,
-            verbose=False
-    ) -> np.array:
+            verbose=False,
+            generator=False
+    ) -> np.array or Iterator:
         """
         Predict labels for X dataset base on X_train and Y_train.
         X : np.array
@@ -185,10 +186,12 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
             Return confidence of prediction or not.
         verbose: bool
             Show step by step log or not.
+        generator: bool
+            Return generator or ordenary np.array.
 
         Return
         ------
-        prediction: np.array
+        prediction: np.array or Iterator
             Python generator with predictions for each x in X[n_train:]. 
             If label can't be predict return None.
         """
@@ -269,4 +272,6 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
                 if confidence:
                     self.confidence_[i] = None
 
-        return prediction
+            yield prediction[i]
+        if not generator:
+            return prediction
