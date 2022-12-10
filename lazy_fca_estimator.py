@@ -6,19 +6,24 @@ from sklearn.utils.multiclass import unique_labels
 import numpy as np
 from tqdm import tqdm
 
+from undefine_scores import accuracy_undefine_score
+
+
 class LazyFCA(BaseEstimator, ClassifierMixin):
     def __init__(
-            self, 
-            consistency_threshold:float=0.9,
-            undefined_treshhold:float=0.8,
-            min_extent_size: int = 2, 
-            check_number:int=1, 
-            numerical_preprocessing:Callable=None) -> None:
+            self,
+            consistency_threshold: float = 0.9,
+            undefined_treshhold: float = 0.8,
+            min_extent_size: int = 2,
+            check_number: int = 1,
+            update_train: bool = False,
+            numerical_preprocessing: Callable = None) -> None:
         super().__init__()
         self.consistency_threshold = consistency_threshold
         self.undefined_treshhold = undefined_treshhold
         self.min_extent_size = min_extent_size
         self.check_number = check_number
+        self.update_train = update_train
         if callable(numerical_preprocessing):
             self.numerical_preprocessing = numerical_preprocessing
         elif numerical_preprocessing == 'min_inf_interval':
@@ -27,14 +32,14 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
             self.numerical_preprocessing = LazyFCA._min_max_interval
         else:
             self.numerical_preprocessing = LazyFCA._basic_interval
-        self.classes_ = None
-        self.confidence_ = None
 
-    def get_params(self, deep:bool=True):
+    def get_params(self, deep: bool = True):
         return {
             "consistency_threshold": self.consistency_threshold,
-            "min_extent_size": self.min_extent_size, 
-            "check_all": self.check_all,
+            "undefined_treshhold": self.undefined_treshhold,
+            "min_extent_size": self.min_extent_size,
+            "check_number": self.check_number,
+            "update_train": self.update_train,
             "numerical_preprocessing": self.numerical_preprocessing
         }
 
@@ -42,6 +47,14 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
         for parameter, value in parameters.items():
             setattr(self, parameter, value)
         return self
+
+    def _more_tags(self):
+        return {
+            'binary_only': True
+        }
+
+    def score(self, X, y, sample_weight=None):
+        return accuracy_undefine_score(y, self.predict(X))
 
     def fit(self, X, y):
         """
@@ -78,7 +91,7 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
     def _min_max_interval(a: float, b: float) -> Tuple[float, float]:
         return (max(a, b), float('inf'))
 
-    def _compute_instersection(self, x:np.array, x_train:np.array) -> np.array:
+    def _compute_instersection(self, x: np.array, x_train: np.array) -> np.array:
         """
         Compute intersection between row from dataset for classification and row from data.
         x: np.array 
@@ -102,8 +115,7 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
 
         return intersection
 
-
-    def _compute_extent_target(self, X_train:np.array, Y_train: np.array, intersection: np.array) -> bool:
+    def _compute_extent_target(self, X_train: np.array, Y_train: np.array, intersection: np.array) -> bool:
         """
         Compute extent label. 
         X_train: np.array
@@ -139,7 +151,7 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
                     positive_count += 1
                 else:
                     negative_count += 1
-        
+
         extent_size = positive_count + negative_count
         if extent_size < self.min_extent_size:
             return None
@@ -153,15 +165,14 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
 
         return None
 
-
     def predict(
-        self, 
-        X:np.array, 
-        X_train:np.array=None, 
-        Y_train:np.array=None, 
-        confidence:bool=False, 
-        verbose=False
-        ) -> np.array:
+            self,
+            X: np.array,
+            X_train: np.array = None,
+            Y_train: np.array = None,
+            confidence: bool = False,
+            verbose=False
+    ) -> np.array:
         """
         Predict labels for X dataset base on X_train and Y_train.
         X : np.array
@@ -187,23 +198,29 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
             Y_train = self.y_
         else:
             X_train, Y_train = check_X_y(X_train, Y_train, dtype=object)
-            X = check_array(X, dtype=object)
             self.classes_ = unique_labels(Y_train)
+
+        X = check_array(X, dtype=object)
 
         if len(self.classes_) < 2 or len(self.classes_) > 2:
             raise ValueError
-         
+
         # Binarised Y_train
         if self.classes_[0] not in {0, 1} or self.classes_[1] not in {0, 1}:
-            Y_train = np.where(Y_train==self.classes_[0], 0, 1)
-        
+            Y_train = np.where(Y_train == self.classes_[0], 0, 1)
+
+        if self.check_number < 1:
+            check_number = X_train.shape[0]
+        else:
+            check_number = self.check_number
         prediction = np.empty(X.shape[0], dtype=np.object_)
         self.confidence_ = np.empty(X.shape[0], dtype=np.object_)
+
         for i, x in tqdm(
-            enumerate(X),
-            initial=0, total=len(X),
-            desc="Predicting data....",
-            disable=not verbose
+                enumerate(X),
+                initial=0, total=len(X),
+                desc="Predicting data....",
+                disable=not verbose
         ):
             number_checked = 0
             negative_count = 0
@@ -222,40 +239,34 @@ class LazyFCA(BaseEstimator, ClassifierMixin):
                     number_checked += 1
 
                 # If enough predictions stop
-                if number_checked >= self.check_number:
+                if number_checked >= check_number:
                     break
-            
+
             # If enough targets predicted count avg prediction and save confidence if needed
-            if positive_count + negative_count >= self.check_number:
+            is_classified = False
+            if positive_count + negative_count >= self.check_number and number_checked > 0:
                 if negative_count > positive_count:
-                    confidence_value = negative_count / self.check_number
+                    confidence_value = negative_count / number_checked
                     if confidence_value > self.consistency_threshold:
-                        if confidence:
-                            self.confidence_[i] = confidence_value
                         prediction[i] = self.classes_[0]
-                        continue
+                        is_classified = True
                 elif positive_count > negative_count:
-                    confidence_value = positive_count / self.check_number
+                    confidence_value = positive_count / number_checked
                     if confidence_value > self.consistency_threshold:
-                        if confidence:
-                            self.confidence_[i] = confidence_value
                         prediction[i] = self.classes_[1]
-                        continue
-            prediction[i] = None
-            if confidence:
-                self.confidence_[i] = None
+                        is_classified = True
+
+            if is_classified:
+                if confidence:
+                    self.confidence_[i] = confidence_value
+                if self.update_train:
+                    X_train = np.append(X_train, x.reshape(1, x.shape[0]), axis=0)
+                    Y_train = np.append(Y_train, prediction[i])
+                    if self.check_number < 1:
+                        check_number += 1
+            else:
+                prediction[i] = None
+                if confidence:
+                    self.confidence_[i] = None
 
         return prediction
-
-
-def accuracy_score_undefine(y_test, predict):
-    pass
-
-def recall_score_undefine(y_test, predict):
-    pass
-
-def precision_score_undefine(y_test, predict):
-    pass
-
-def f1_score_undefine(y_test, predict):
-    pass
