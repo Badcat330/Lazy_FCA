@@ -118,5 +118,8 @@ def f1_undefine_score(
     check_consistent_length(y_test, predict)
     recall = recall_undefine_score(y_test, predict, pos_label)
     precision = precision_undefine_score(y_test, predict, pos_label)
-
-    return 2 * (precision * recall) / (precision + recall)
+    f1 = 2 * (precision * recall) / (precision + recall)
+    if np.isnan(f1):
+        return 0
+    else:
+        return f1
