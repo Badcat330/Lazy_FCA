@@ -46,6 +46,9 @@ def binarize_categorical(X:pd.DataFrame, names:List[str], in_line:bool=False):
         if len(lb.classes_) != 2:
             X_copy = pd.concat([X_copy, pd.DataFrame(new_cat, columns=new_names)], axis=1)
             X_copy = X_copy.drop(name, axis=1)
+        else:
+            X_copy = pd.concat([X_copy, pd.DataFrame(new_cat, columns=[name+'new'])], axis=1)
+            X_copy = X_copy.drop(name, axis=1)
 
     if in_line:
         X = X_copy
